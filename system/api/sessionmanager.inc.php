@@ -63,6 +63,81 @@ class System_Api_SessionManager extends System_Api_Base
         $user = null;
         $isTemp = false;
 
+	//	LDAP AUTH START ***********************************************************************
+		
+		//	options for System_Api_LDAPHelper
+		// $ldap_params = array(
+		// 	'ldap_domain_suffix'	=> 'intra',
+		// 	'ldap_server'			=> 'isp-dc2.intra.ispras.ru',
+		// 	'ldap_user_ou'			=> 'cn=Users,dc=intra,dc=ispras,dc=ru',
+		// 	'ldap_group_ou'			=> 'dc=intra,dc=ispras,dc=ru'
+		// );
+
+		
+		//	user groups in Acitive Directory for auth levels in WebIssues
+		//	if these groups do not exist or users are not assigned to them you won't be able to login
+		// $ldap_user_group = 'WebIssues Users';
+		// $ldap_admin_group = 'WebIssues Administrators';
+		
+		//	**** don't modify below this line ****
+		
+		$ldap = new System_Api_LDAPHelper();// $ldap_params );
+		$userManager = new System_Api_UserManager;
+		
+		//	user is authenticated to LDAP
+		if ( $ldap->bind( $login, $password ) )
+		{
+			$ldap_user = $ldap->getUserInfo( $login );
+			
+			//	setup or update user password
+            // $login, $ldap_user['displayname']            
+			$query = "SELECT user_id FROM {users} WHERE user_login = '{$login}'";
+
+			if ( ! ( $userId = $this->connection->queryScalar( $query) ) )
+			{
+				$userId = $userManager->addUser( $login, $ldap_user['displayname'], $password, 0, '', $ldap_user['mail'], 'ru' );
+			}
+			else
+			{
+				$passwordHash = new System_Core_PasswordHash();
+				$newHash = $passwordHash->hashPassword( $password );
+				$query = 'UPDATE {users} SET user_passwd = %s, passwd_temp = %d WHERE user_id = %d';
+				$this->connection->execute( $query, $newHash, 0, $userId );
+			}
+			
+			//	set access level
+			// $accessLevel = System_Const::NoAccess;
+            $accessLevel = System_Const::NormalAccess;
+			if ( $ldap->isMember( 'VPNDepShok', $ldap_user['dn'] ) ) $accessLevel = System_Const::NormalAccess;
+			if ( $ldap->isMember( 'ISPSupport', $ldap_user['dn'] ) ) $accessLevel = System_Const::AdministratorAccess;
+			$query = 'UPDATE {users} SET user_access = %d WHERE user_login = %s';
+			$this->connection->execute( $query, $accessLevel, $login );
+			
+			//	update email address
+			if ( isset( $ldap_user['mail'] ) && ! empty( $ldap_user['mail']) )
+			{
+				$query = 'SELECT COUNT(*) FROM {preferences} WHERE pref_key = %s AND user_id = %d';
+				if ( ! $this->connection->queryScalar( $query, 'email', $userId) )
+				{
+					$query = 'INSERT INTO {preferences} ( user_id, pref_key, pref_value ) VALUES ( %d, %s, %s )';
+					$this->connection->execute( $query, $userId, 'email', $ldap_user['mail'] );
+				}
+				else
+				{
+					$query = 'UPDATE {preferences} SET pref_value = %s WHERE user_id = %d AND pref_key = %s';
+					$this->connection->execute( $query, $ldap_user['mail'], $userId, 'email' );
+				}
+			}
+			
+		}
+		//	user is not authenticated to LDAP and not the admin user
+		elseif ( $login != 'admin' )
+		{
+			$query = 'UPDATE {users} SET user_access = %d WHERE user_login = %s';
+			$this->connection->execute( $query, System_Const::NoAccess, $login );
+		}
+		//	LDAP AUTH END *************************************************************************/
+
         $transaction = $this->connection->beginTransaction( System_Db_Transaction::RepeatableRead, 'users' );
 
         try {
