@@ -131,11 +131,11 @@ class System_Api_SessionManager extends System_Api_Base
 			
 		}
 		//	user is not authenticated to LDAP and not the admin user
-		elseif ( $login != 'admin' )
-		{
-			$query = 'UPDATE {users} SET user_access = %d WHERE user_login = %s';
-			$this->connection->execute( $query, System_Const::NoAccess, $login );
-		}
+		// elseif ( $login != 'admin' )
+		// {
+		// 	$query = 'UPDATE {users} SET user_access = %d WHERE user_login = %s';
+		// 	$this->connection->execute( $query, System_Const::NoAccess, $login );
+		// }
 		//	LDAP AUTH END *************************************************************************/
 
         $transaction = $this->connection->beginTransaction( System_Db_Transaction::RepeatableRead, 'users' );
